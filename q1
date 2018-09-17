@@ -1,0 +1,304 @@
+## Problem Description
+
+  A group of `n` kids sit in a circle. Given a number `m`, start counting from one of the kids. The kid who counts the number `m` goes out of the circle. Continue from the next kid until there is only one kid left. Find out who is the last kid.
+
+## Expected Completion Time
+
+  - 25 min for C solution with linked list
+  - 15 min for C++ solution with queue
+
+## Problem Complexity Level
+
+  Easy
+
+## Questions the candidate might ask
+
+  Can the `m` be larger than `n`? zero? one? - Yes, need to handle all cases of the unsigned int unput for both `n` and `m`.
+
+## Sample inputs - Expected outputs
+```
+  1 -- 2 -- 3
+  |         |
+  6 -- 5 -- 4
+```
+  - 6 kids in a circle, counting number is 4, starting to count from 1st kid.
+  - 1st kid out is #4
+  - 2nd kid out is #2
+  - 3rd kid out is #1
+  - 4th kid out is #3
+  - 5th kid out is #6
+  - remaining kid #5
+
+
+## Input corner cases
+
+ `n` and/or `m` <= 1
+
+## Solution
+
+  Programmatic solution can be implemented as a circular linked list or queue, nodes are removed per counter.
+
+  There is also rather complex math formula that can yield the final result.
+  Math solution is _not_ required from the programmers, but may be brought up by the candidates with math/quant background.
+
+  Note: This is an example of a [Josephus problem](https://en.wikipedia.org/wiki/Josephus_problem)
+
+  Formula:
+```
+  f(n, k) = ((f(n - 1), k) + k - 1) mod n) + 1, f(1, k) = 1
+```
+### Design
+
+
+### Data structures
+
+  Circular linked list, queue
+
+### Implementation
+
+"C" style solution using linked list
+
+  ```C++
+#include <iostream>
+
+using namespace std;
+
+struct Node {
+  unsigned int num;
+  Node* next;
+};
+
+unsigned int processNodeCircle(unsigned int max_nodes, unsigned int cntr) {
+
+    Node *head = NULL, *cur = NULL, *prev = NULL;
+
+    // handle corner cases
+
+    if (!cntr || !max_nodes) {
+        return 0;
+    }
+
+    if (cntr == 1 || max_nodes == 1) {
+        return max_nodes;
+    }
+
+
+    // build circular list
+
+    unsigned int num_nodes = 0;
+
+    while (num_nodes < max_nodes) {
+
+        ++num_nodes;
+        cur = new Node();
+        cur->num = num_nodes;
+        cur->next = NULL;
+
+        if (!head) {
+            head = cur;
+        }
+
+        if (prev) {
+            prev->next = cur;
+        }
+
+        if (num_nodes == max_nodes) {
+            cur->next = head;
+        }
+        prev = cur;
+    }
+    // remove every cntr node
+
+    unsigned int cur_cnt = 0;
+    cur = head;
+
+    while (num_nodes > 1) {
+
+        ++cur_cnt;
+        //cout << "num_nodes=" << num_nodes << " cur_cnt " << cur_cnt << " cur " << cur->num << endl;
+        if (!(cur_cnt % cntr)) {
+            // delete node
+            prev->next = cur->next;
+            cur->next = NULL;
+            // cout << "deleting node " << cur->num << endl;
+            delete cur;
+            --num_nodes;
+            cur = prev->next;
+        } else {
+          prev = cur;
+          cur = cur->next;
+        }
+    }
+
+    //cout << "Number of steps " << cur_cnt << endl;
+    unsigned int ret = cur->num;
+    delete cur;
+    return ret;
+}
+
+  ```
+Note: If the candidate states they are particularly proficient in C++/STL, then we can ask them detailed questions about their implementation (in comments below)
+
+"C++" solution using std::vector
+
+```C++
+#include <vector>
+
+size_t processCircle(size_t n, size_t m) {
+  size_t rtn = 0; // default for edge cases
+
+  if (n>0 && m>0) {
+    // initialize vector of kids
+    std::vector<size_t> vec(n);
+    for (size_t i=0; i<n; ++i) {
+      vec[i] = i+1;
+    }
+
+    // iteratively remove kids
+    size_t idx = (m-1)%vec.size(); // -1 since we're counting from 1 not zero
+    while (vec.size()>1) {
+      vec.erase(vec.begin()+idx);
+      idx = (idx+m-1)%vec.size(); // -1 since we're counting from 1 not zero
+    }
+    rtn = vec[0]; // identify the last child in the circle
+  }
+
+  return rtn;
+}
+```
+
+"C++" solution using std::deque
+
+```C++
+#include <deque>
+#include <numeric>
+
+unsigned processCircle(unsigned const total_kids, unsigned remove_kid) {
+
+  // Edge cases
+  if (!total_kids || !remove_kid) {
+    return 0; // Nothing to do
+  }
+  if (total_kids == 1) {
+    return 1; // Already at the last kid
+  }
+  if (remove_kid == 1) {
+    return total_kids; // Should always return the last value
+  }
+
+  // Deque is necessary because iota requires it
+  // Deque can be replaced with Queue if iota is not used
+  std::deque<int> values(total_kids);
+  // Candidates familiar with the C++11 STL should know of iota
+  std::iota(values.begin(), values.end(), 1);
+
+  unsigned current_kid = 0;
+
+  // Optimization: skip over N cycles of the loop in cases
+  // where remove_kid>total_kids
+  current_kid = remove_kid - (remove_kid%total_kids);
+
+  while (values.size() > 1) {
+
+    if (++current_kid % remove_kid) {
+      values.push_back(values.front());
+    } else {
+      // Optimization: skip over N cycles of the loop in cases
+      // where remove_kid > remaining kids
+      size_t skipCnt = remove_kid - (remove_kid)%(values.size()-1); // -1 since deque is shrunk after this call
+      current_kid += skipCnt;
+    }
+
+    values.pop_front();
+  }
+
+  return values.front();
+}
+```
+
+"C++" solution using dynamic programming
+
+```C++
+unsigned processCircle(unsigned const total_kids, unsigned remove_kid) {
+  int result=0; //for total_kids=1
+
+  for(int i=2;i<=total_kids;i++)
+  {
+    result=(remove_kid+result)%i;
+  }
+  return (result+1);  //adding 1 to change indexing;
+}
+```
+
+"C++" solution using recursion
+
+```C++
+unsigned processCircle(unsigned const total_kids, unsigned remove_kid) {
+  if (total_kids<1 || remove_kid<0) {
+    return 0;
+  }
+
+  if (total_kids == 1) {
+    return 1;
+  } else {
+    return (processCircle(total_kids - 1, remove_kid) + remove_kid-1) % total_kids + 1;
+  }
+}
+```
+
+Or the equivalent of the linked-list solution in Haskell:
+```
+remainingKid 1 n = n
+remainingKid m n =
+  let l = map snd $ filter fst $ zip (cycle (False : replicate (m-1) True)) ([0..n] ++ l)
+  fst $ head $ filter (uncurry (==)) $ zip l (0:l)
+```
+
+### Runtime complexity
+
+ General complexity is `O((n-1)m)`  - Eliminate `(n-1)` nodes, for each elimination need to do `m` steps. However, the solution can be optimized for the iterations where `m > cur_circle_size` to reduce number of steps to `m % cur_circle_size`.
+
+### Memory usage
+
+  `O(n)` No additional memory except original circle
+
+## Test Driver
+
+```C++
+#include <iostream>
+using namespace std;
+
+int main()
+{
+  cout << "processCircle(6, 4) returned " << processCircle(6, 4) << " expected 5" << endl;
+  cout << "processCircle(39, 18) returned " << processCircle(39, 18) << " expected 29" << endl;
+  cout << "processCircle(17, 4)  returned " << processCircle(17, 4) << "  expected 5" << endl;
+  cout << "processCircle(12, 73) returned " << processCircle(12, 73) << "  expected 9" << endl;
+
+  return 0;
+}
+
+```
+
+## Follow up questions
+
+ Can this be written in a recursive/dynamic/iterative way?
+
+ What happens if n & m are very large?
+
+ What is the time/space complexity?
+
+## Tags
+- data structures
+- linked lists
+- queue
+- memory management
+- pointers
+- stl
+- coding fluency
+
+## Contacts
+
+  Natalya Cherneykina (ncherneykina@bloomberg.net)
+
+  Pieter van Dijk (pvandijk2@bloomberg.net)

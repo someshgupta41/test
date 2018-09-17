@@ -1,0 +1,243 @@
+
+## Problem Description
+
+Let's suppose Bloomberg is sponsoring a coding competition at its New York and San Francisco offices.
+We will have to fly the participants to either one of these two offices. Each office can only accommodate **half** of the participants.
+The goal is to assign each participant to an office in a way that the total travel cost for the company is minimized. Each participant will be represented as a pair of costs: <costToFlyToNY, costToFlyToSF>.
+Determine the minimum cost given a list of participants.
+
+## Expected Completion Time
+
+  20-30 minutes
+
+## Problem Complexity Level
+
+  Medium
+
+## Questions the candidate should ask
+
+- What happens if we have odd number of participants? one office can accomoate one extra
+
+## Sample inputs - Expected outputs
+
+Participant List as <costToFlyToNY, costToFlyToSF>:
+<500, 600>,
+<600, 400>,
+<200, 900>,
+<700, 300>
+Output: 1400
+With only 4 participants, 2 must fly to SF and 2 must fly to NY
+
+## Input corner cases
+
+
+## Solution
+
+There are several solutions to this problem.
+
+
+Solution 1:
+
+A brute-force solution to compute the cost of all possible assignments and return the minimum cost of all. This can be done recursively by examining the cost of choosing both NY and SF for each participant. (a implementation of what this looks like is provided below. This solution has a runtime complexity of 2^n and it will not finish even if n is relatively small, say 100))
+
+
+Solution 2:
+
+(A key or hint to get to a more optimal solution is to figure out that the cost difference between NY and SF is the differentiating factor. In other words, what is the easiest decision to make? A person A with $300 cost for NY and $1000 cost for SF or a person B with $200 cost for NY and $250 cost for SF? Then it is easy to see it is better to assign B to SF and A to NY because it is more cost saving to not have A go to SF.)
+
+Sort all participants by the cost difference between NY and SF and then start with the participant that has the biggest cost difference
+and assign him or her to the office with the cheaper cost. If the desired office is already at full capacity then you have to assign
+him or her to the other office. As you go through this process for everyone you add up the cost. (implementation provided below)
+
+
+Solution 2a:
+
+This solution is a variant of solution 2. The idea is also to sort all participants by the cost difference but with NY cost minus SF cost. This will give you who you should prioritize to assign to the NY office at the top of the sorted list because the biggest saving for assigning someone to NY instead of SF is sorted at the top. The first half of the list will be the ones going to NY and the bottom half of the list will be the ones going to SF.
+
+
+Solution 3:
+
+Begin by assigning each participant to either NY or SF office based on whichever has cheaper cost. When the desired office is full,
+you can check if you will be better off by swapping him or her with someone who is already assigned to that office. You can keep sorted (by cost difference) sets of participants assigned to each office to help make this decision efficiently.
+
+
+Solution 4:
+
+This is a variant of solution 3. Instead of doing the swapping on the fly, you can finish the assignment and at the end you probably will have overfilled one office and you will just transfer however many participants needed from the overfilled office to the other office. (This should just be the top n elements in the set since the set is sorted by cost difference) Note, you cannot simply just find the top n people to move based on the cheapest costs to the underfilled office. This may seem logical but it is not optimal. Consider the case where NY is overfilled and you need to move people to SF. Person A with cost of 0 to NY (local) and a cost of 50 to SF and person B with cost of 100 to NY and 101 to SF. If you go by cheapest SF cost, person A will be reassigned to SF and total cost overall will go up by 50. But if you go by the cost difference, person B will be reassigned to SF and total cost overall only goes up by 1.
+
+
+Solution 5:
+
+This is a less optimal solution with a runtime complexity of n^2. The goal is to fill up the slots for NY one at a time by picking a "best" participant to go to NY each time. This is analogous to finding the minimum from a set and then take it out of the set and repeat. What is the "best" participant to go to NY, in each comparsion of 2 people you compute the minimal cost to make the assignment for these 2 people and the person that ends up going to NY is the "better" participant for NY and you use this "better" participant to compare with the next person and so on and eventually you get the "best". There is a small optimization as well. You don't have to go through all participants each time, as long as you go through at least 50% of the total participants it will be good enough because a person that is better than at least 50% of the total in this comparison will belong to the group of people going to NY anyawy.
+
+
+Solution 6:
+
+This is a generic/formal solution that is overkill for this problem. Since this problem is a form of a task asisgnment problem. You can
+use standard algorithm for this. For example, The Hungarian Method http://www.math.harvard.edu/archive/20_spring_05/handouts/assignment_overheads.pdf
+the cost matrix will be need to contain all NY and SF slots. ** I wouldn't expect the candiate to implement this **
+
+Solution 7:
+
+(linear time solution contributed by Matthias Goergens)
+Observe that solution 2 essentially partitions the list of candidates by
+whether their difference in cost (= opportunity cost) is above or below the
+median.
+Instead of sorting first in O(n log n) and then post-processing in O(n), we can
+do that partition directly in linear time.
+This solution relies on the fact that a candidate knows finding a the median can be done in linear time.
+https://en.wikipedia.org/wiki/Selection_algorithm
+** I wouldn't expect the candiate to know how to implement finding the median in linear time **
+
+### Implementation
+
+Solution 2:
+
+
+```c++
+#include<vector>
+#include<iostream>
+#include<math.h>
+
+using namespace std;
+
+class Participant
+{
+public:
+  int d_cost_to_ny;
+  int d_cost_to_sf;
+
+  Participant(int to_ny, int to_sf)
+  {
+    d_cost_to_ny = to_ny;
+    d_cost_to_sf = to_sf;
+  }
+
+  friend bool operator<(const Participant& a, const Participant& b) //true if a is less than b
+  {
+    if(abs(a.d_cost_to_ny - a.d_cost_to_sf) < abs(b.d_cost_to_ny - b.d_cost_to_sf))
+      return true;
+    else
+      return false;
+  }
+};
+
+
+int get_min_cost(vector<Participant> p)
+{
+  int ny_cap = p.size()/2;
+  int sf_cap = p.size() - ny_cap; //rest of them
+  int total_cost = 0;
+
+  sort(p.begin(), p.end());
+  for(int i=p.size()-1; i>=0; i--)
+    {
+      //cheaper to go to ny only if ny still has capacity OR SF is already full
+      if( (p[i].d_cost_to_ny < p[i].d_cost_to_sf && ny_cap >0) ||
+          sf_cap == 0)
+        {
+          ny_cap--;
+          total_cost += p[i].d_cost_to_ny;
+        }
+      else
+        {
+          sf_cap--;
+          total_cost +=p[i].d_cost_to_sf;
+        }
+
+    }
+  return total_cost;
+}
+
+```
+
+
+Solution 1:
+```c++
+int minCost(const vector<Participant>& ps, int index, int nycap, int sfcap) {
+    if(index >= ps.size()) {
+        return 0;
+    }
+    if(0 == nycap) {
+        return ps[index].sfcost + minCost(ps, index + 1, nycap, --sfcap);
+    }
+    if(0 == sfcap) {
+        return ps[index].nycost + minCost(ps, index + 1, --nycap, sfcap);
+    }
+    return min(
+        ps[index].nycost + minCost(ps, index + 1, --nycap, sfcap),
+        ps[index].sfcost + minCost(ps, index + 1, nycap, --sfcap),
+    );
+}
+int minCost(const vector<Participant>& ps, int nycap, int sfcap) {
+    assert(nycap + sfcap >= ps.size());
+    return minCost(ps, 0, nycap, sfcap);
+}
+```
+
+Solution 7:
+
+```Haskell
+import Data.List
+
+minCost :: [(Int, Int)] -> Int
+minCost participants =
+    sum (map fst nys) + sum (map snd sfs)
+  where
+    diffs = map (\(ny, sf) -> ny - sf) participants
+    (nys, sfs) = partition (<= median diffs) participants
+
+-- median-of-median algorithm.  QuickSelect is much simpler but requires random
+-- numbers, and only has expected worst-case linear time.
+median :: (Show a, Ord a) => [a] -> a
+median xs = select (length xs `div` 2) xs
+
+select :: (Show a, Ord a) => Int -> [a] -> a
+select i xs
+  | n <= 5                        = sort xs !! i
+  | lengthLower == i  = medianOfMedians
+  | lengthLower < i   = select (i - lengthLower - 1) upperPartition
+  | otherwise         = select i lowerPartition
+  where
+    n = length xs
+    medianOfMedians = median (map median (chunksOf 5 xs))
+    (lowerPartition, _:upperPartition) = partition (\x -> x < medianOfMedians) xs
+    lengthLower = length lowerPartition
+    chunksOf :: Int -> [a] -> [[a]]
+    chunksOf _ [] = []
+    chunksOf n xs = (take n xs) : (chunksOf n (drop n xs))
+```
+
+### Runtime complexity
+
+O(n log n) where n is number of participants with an approach that sorts, and
+O(n) for solution 7.
+
+## Test Driver
+
+```c++
+int main(int argc, char* argv[])
+{
+  vector<Participant> p;
+  p.push_back(Participant(500, 600));
+  p.push_back(Participant(600, 400));
+  p.push_back(Participant(200, 900));
+  p.push_back(Participant(700, 300));
+
+
+  cout<<get_min_cost(p)<<endl;
+}
+```
+
+## Follow up questions
+
+
+## Tags
+- data structures
+- stl
+- coding fluency
+
+## Contacts
+
+ Peng Guo (pguo4@bloomberg.net)
+
