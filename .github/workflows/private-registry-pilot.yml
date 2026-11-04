@@ -1,0 +1,61 @@
+name: Publish private registry pilot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ocasgs-28397-private-image-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # This pilot is intentionally bound to the repository supplied by its owner.
+    if: github.repository == 'someshgupta41/test'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GHCR_OWNER: someshgupta41
+      GHCR_PACKAGE: ocasgs-28397-private-http
+      SOURCE: ghcr.io/nginx/nginx-unprivileged@sha256:44e74ca483234093081138b6d7b6f561d55557756a2deefc3a5056148defeb99
+    steps:
+      - name: Require a new or private package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          url = 'https://api.github.com/users/' + os.environ['GHCR_OWNER'] + '/packages/container/' + os.environ['GHCR_PACKAGE']
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          try:
+              with urllib.request.urlopen(request) as response:
+                  package = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise SystemExit('Package preflight failed: HTTP ' + str(error.code))
+          else:
+              if package.get('visibility') != 'private':
+                  raise SystemExit('Refusing to publish into a non-private package')
+          PY
+      - name: Publish the pinned HTTP sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GHCR_OWNER" --password-stdin
+          docker pull --platform linux/amd64 "$SOURCE"
+          target="ghcr.io/$GHCR_OWNER/$GHCR_PACKAGE:pilot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          docker tag "$SOURCE" "$target"
+          docker push "$target"
+          printf 'PILOT_IMAGE=%s\n' "$target" >> "$GITHUB_ENV"
+      - name: Verify private visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          visibility="$(gh api "/users/$GHCR_OWNER/packages/container/$GHCR_PACKAGE" --jq .visibility)"
+          test "$visibility" = private
+          printf 'Private pilot image: `%s`\n\nRuntime pull credential and live deployment tests remain pending.\n' "$PILOT_IMAGE" >> "$GITHUB_STEP_SUMMARY"
