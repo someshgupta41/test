@@ -1,0 +1,101 @@
+name: Private registry pilot built sample
+
+on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/private-registry-pilot-built.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ocasgs-28397-private-image-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # This pilot is intentionally bound to the repository supplied by its owner.
+    if: github.repository == 'someshgupta41/test'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GHCR_OWNER: someshgupta41
+      GHCR_PACKAGE: ocasgs-28397-built-private-http-${{ github.run_id }}-${{ github.run_attempt }}
+      SOURCE: ghcr.io/nginx/nginx-unprivileged@sha256:44e74ca483234093081138b6d7b6f561d55557756a2deefc3a5056148defeb99
+    steps:
+      - name: Require a new or private package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          url = 'https://api.github.com/users/' + os.environ['GHCR_OWNER'] + '/packages/container/' + os.environ['GHCR_PACKAGE']
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          try:
+              with urllib.request.urlopen(request) as response:
+                  package = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise SystemExit('Package preflight failed: HTTP ' + str(error.code))
+          else:
+              if package.get('visibility') != 'private':
+                  raise SystemExit('Refusing to publish into a non-private package')
+          PY
+      - name: Build and publish a distinct HTTP sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DOCKER_CONFIG="$(mktemp -d)"
+          pilot_context="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG" "$pilot_context"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GHCR_OWNER" --password-stdin
+          target="ghcr.io/$GHCR_OWNER/$GHCR_PACKAGE:pilot-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          cat > "$pilot_context/Dockerfile" <<'DOCKERFILE'
+          ARG PILOT_BASE
+          FROM ${PILOT_BASE}
+          LABEL org.opencontainers.image.source="https://github.com/someshgupta41/test"
+          LABEL org.opencontainers.image.title="OCASGS-28397 private HTTP pilot"
+          LABEL org.opencontainers.image.description="Disposable private registry authentication fixture"
+          LABEL org.opencontainers.image.url="https://github.com/someshgupta41/test"
+          COPY index.html /usr/share/nginx/html/index.html
+          DOCKERFILE
+          printf '<!doctype html><html><body>OCASGS-28397 private registry pilot</body></html>\n' > "$pilot_context/index.html"
+          docker build --platform linux/amd64 --build-arg PILOT_BASE="$SOURCE" --label "org.opencontainers.image.revision=$GITHUB_SHA" --tag "$target" "$pilot_context"
+          docker image inspect "$target" --format 'Built image config: {{.Id}}'
+          docker push "$target"
+          printf 'PILOT_IMAGE=%s\n' "$target" >> "$GITHUB_ENV"
+      - name: Verify private visibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          visibility="$(gh api "/users/$GHCR_OWNER/packages/container/$GHCR_PACKAGE" --jq .visibility)"
+          printf 'Package %s visibility: %s\n' "$GHCR_PACKAGE" "$visibility"
+          if [ "$visibility" != private ]; then
+            printf '::error::Fixture is not private; do not use it for private-image tests.\n'
+            exit 1
+          fi
+          printf 'Private pilot image: `%s`\n\nRuntime pull credential and live deployment tests remain pending.\n' "$PILOT_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Require anonymous pull denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error, urllib.parse
+          repo = os.environ['GHCR_OWNER'] + '/' + os.environ['GHCR_PACKAGE']
+          tag = os.environ['PILOT_IMAGE'].rsplit(':', 1)[1]
+          token_url = 'https://ghcr.io/token?' + urllib.parse.urlencode({'service':'ghcr.io', 'scope':'repository:' + repo + ':pull'})
+          try:
+              with urllib.request.urlopen(token_url, timeout=30) as response:
+                  token = json.load(response)['token']
+              request = urllib.request.Request('https://ghcr.io/v2/' + repo + '/manifests/' + tag, headers={'Authorization':'Bearer ' + token, 'Accept':'application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  status = response.status
+          except urllib.error.HTTPError as error:
+              if error.code not in (401, 403):
+                  raise SystemExit('Anonymous check inconclusive: HTTP ' + str(error.code))
+              print('PASS: anonymous registry access denied: HTTP ' + str(error.code))
+          else:
+              raise SystemExit('FAIL: anonymous manifest access succeeded: HTTP ' + str(status))
+          PY
